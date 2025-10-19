@@ -26,7 +26,7 @@ import traceback
 from .autopcr.util.logger import instance as logger
 
 address = None  # 填你的公网IP或域名，不填则会自动尝试获取
-useHttps = False
+useHttps = True
 
 server = HttpServer(qq_mod=True)
 app = nonebot.get_bot().server_app
@@ -91,8 +91,8 @@ sv = Service(
     name="自动清日常",
     use_priv=priv.NORMAL,  # 使用权限
     manage_priv=priv.ADMIN,  # 管理权限
-    visible=False,  # False隐藏
-    enable_on_default=False,  # 是否默认启用
+    visible=True,  # False隐藏
+    enable_on_default=True,  # 是否默认启用
     bundle='pcr工具',  # 属于哪一类
     help_=sv_help  # 帮助文本
 )
@@ -246,7 +246,7 @@ def wrap_accountmgr(func):
             await botev.finish("只有管理员可以操作他人账号")
 
         if target_qq not in usermgr.qids():
-            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}配置日常】进行配置")
+            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}配置日常】进行配置\n旧版清日常目前保留，使用【清日常】")
 
         async with usermgr.load(target_qq, readonly=True) as accmgr:
             await func(botev = botev, accmgr = accmgr, *args, **kwargs)

@@ -10,7 +10,7 @@ from ..core.sdkclient import account, platform
 from .modulemgr import ModuleManager, TaskResult, ModuleResult, eResultStatus, TaskResultInfo, ModuleResultInfo, ResultInfo
 import os, re, shutil
 from typing import Any, Dict, Iterator, List, Tuple, Union
-from ..constants import CLAN_BATTLE_FORBID_PATH, CONFIG_PATH, OLD_CONFIG_PATH, RESULT_DIR, BSDK, CHANNEL_OPTION, SUPERUSER
+from ..constants import CLAN_BATTLE_FORBID_PATH, CONFIG_PATH, OLD_CONFIG_PATH, RESULT_DIR, BSDK, CHANNEL_OPTION, SUPERUSER, AUTOPCR_MAX_ACCOUNTS_PER_QQ
 from asyncio import Lock
 import json
 from copy import deepcopy
@@ -323,6 +323,12 @@ class AccountManager:
             raise AccountException(f'非法账户名{account}')
         if account in self.accounts():
             raise AccountException('账号已存在')
+        
+        # 检查账号数量限制
+        current_count = self.account_count()
+        if current_count >= AUTOPCR_MAX_ACCOUNTS_PER_QQ:
+            raise AccountException(f'该QQ已达到最大绑定账号数量限制({AUTOPCR_MAX_ACCOUNTS_PER_QQ}个)')
+        
         with open(self.path(account), 'w') as f:
             f.write(AccountData().to_json())
         return self.load(account)

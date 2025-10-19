@@ -19,7 +19,11 @@ CHANNEL_OPTION = [BSDK, QSDK]
 DEBUG_LOG = strtobool(os.getenv("AUTOPCR_SERVER_DEBUG_LOG", "false"))
 
 ALLOW_REGISTER = strtobool(os.getenv("AUTOPCR_SERVER_ALLOW_REGISTER", 'true'))
-SUPERUSER = str(os.getenv("AUTOPCR_SERVER_SUPERUSER", ""))
+AUTOPCR_SERVER_SUPERUSER = os.environ.get('AUTOPCR_SERVER_SUPERUSER', '')
+SUPERUSER = AUTOPCR_SERVER_SUPERUSER.split(',') if AUTOPCR_SERVER_SUPERUSER else []
+
+# QQ最大绑定游戏账号数量限制
+AUTOPCR_MAX_ACCOUNTS_PER_QQ = int(os.environ.get('AUTOPCR_MAX_ACCOUNTS_PER_QQ', '5'))
 
 ROOT_DIR = os.path.join(os.path.dirname(__file__), '..')
 CACHE_DIR = os.path.join(ROOT_DIR, './cache/')

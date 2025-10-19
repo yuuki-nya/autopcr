@@ -33,6 +33,7 @@ python3 _httpserver_test.py
 | AUTOPCR_SERVER_DEBUG_LOG      | 是否输出 Debug 日志 | False            |
 | AUTOPCR_SERVER_ALLOW_REGISTER | 是否允许注册        | True             |
 | AUTOPCR_SERVER_SUPERUSER      | 设置无条件拥有管理员的用户 | （可选，设置为登录使用的 QQ） |
+| AUTOPCR_MAX_ACCOUNTS_PER_QQ   | 每个QQ最大绑定游戏账号数量 | 5                |
 
 ## Credits
 - aiorequests 来自 [HoshinoBot](https://github.com/Ice-Cirno/HoshinoBot)
