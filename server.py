@@ -41,7 +41,8 @@ prefix = '#'
 
 sv_help = f"""
 - {prefix}配置日常 一切的开始
-- {prefix}重置登录密码 重置登录密码，也可以用来注册
+- {prefix}自动清日常登录 生成一次性链接登录，清及时修改密码
+- {prefix}重置登录密码 重置登录密码，也可以用来注册，清及时修改密码
 - {prefix}清日常 [昵称] 无昵称则默认账号
 - {prefix}清日常所有 清该qq号下所有号的日常
 指令格式： 命令 昵称 参数，下述省略昵称，<>表示必填，[]表示可选，|表示分割
@@ -248,7 +249,7 @@ def wrap_accountmgr(func):
             await botev.finish("只有管理员可以操作他人账号")
 
         if target_qq not in usermgr.qids():
-            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}重置登录密码】进行配置\n旧版清日常目前保留，使用【清日常】")
+            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}自动清日常登录】进行配置\n旧版清日常目前保留，使用【清日常】")
 
         async with usermgr.load(target_qq, readonly=True) as accmgr:
             await func(botev = botev, accmgr = accmgr, *args, **kwargs)
@@ -612,12 +613,33 @@ async def reset_login_password(botev: BotEvent):
         if qq in usermgr.qids():
             # 用户已存在，重置密码
             async with usermgr.load(qq) as mgr:
+                # 检查是否为SUPERUSER，如果是则保持admin权限
+                from .autopcr.constants import SUPERUSER
+                was_admin = mgr.secret.admin
+                is_superuser = qq in SUPERUSER
+                
                 mgr.set_password(password)
+                
+                # 如果是SUPERUSER，确保admin权限为true
+                if is_superuser:
+                    mgr.secret.admin = True
+                
                 mgr.save_secret()
             await botev.finish(f"密码重置成功！\n新密码：{password}\n请尽快登录网页端修改密码\n地址：{address}login")
         else:
             # 用户不存在，创建新用户
-            usermgr.create(qq, password)
+            from .autopcr.constants import SUPERUSER
+            is_superuser = qq in SUPERUSER
+            
+            # 创建用户
+            mgr = usermgr.create(qq, password)
+            
+            # 如果是SUPERUSER，设置admin权限为true
+            if is_superuser:
+                async with usermgr.load(qq) as user_mgr:
+                    user_mgr.secret.admin = True
+                    user_mgr.save_secret()
+            
             await botev.finish(f"注册成功！\n您的QQ号：{qq}\n登录密码：{password}\n请尽快登录网页端修改密码\n地址：{address}login")
     except Exception as e:
         # 过滤掉HoshinoBot框架的正常结束消息
@@ -628,7 +650,73 @@ async def reset_login_password(botev: BotEvent):
         else:
             # 真正的错误才记录和返回
             logger.error(f"重置密码失败: {e}")
+            await botev.finish(f"操作失败: {e}")
             await botev.finish(f"操作失败：{str(e)}")
+
+@sv.on_fullmatch(f"{prefix}自动清日常登录")
+@wrap_hoshino_event
+async def auto_daily_login(botev: BotEvent):
+    """生成一次性登录链接指令处理函数"""
+    # 检查qq_mod是否为True
+    if not server.qq_mod:
+        await botev.finish("此功能需要启用QQ模式")
+        return
+    
+    # 获取用户QQ号
+    qq = str(botev.user_id)
+    
+    try:
+        # 生成一次性登录码
+        import time
+        
+        # 生成8位随机登录码
+        login_code = ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', k=8))
+        
+        # 检查用户是否已存在
+        if qq not in usermgr.qids():
+            # 用户不存在，创建新用户
+            from .autopcr.constants import SUPERUSER
+            is_superuser = qq in SUPERUSER
+            
+            # 生成8位随机密码（用户不需要知道）
+            password = ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', k=8))
+            
+            # 创建用户
+            mgr = usermgr.create(qq, password)
+            
+            # 如果是SUPERUSER，设置admin权限为true
+            if is_superuser:
+                async with usermgr.load(qq) as user_mgr:
+                    user_mgr.secret.admin = True
+                    user_mgr.save_secret()
+        
+        # 将登录码和QQ号的映射存储到服务器中（用于后续验证）
+        # 这里我们使用服务器的内存存储，实际项目中可能需要使用数据库
+        if not hasattr(server, 'onetime_codes'):
+            server.onetime_codes = {}
+        
+        # 存储登录码，包含QQ号和过期时间（10分钟后过期）
+        server.onetime_codes[login_code] = {
+            'qq': qq,
+            'expires': time.time() + 600,  # 10分钟后过期
+            'used': False
+        }
+        
+        # 生成一次性登录链接
+        login_url = f"{address}onetime-login?code={login_code}"
+        
+        await botev.finish(f"一次性登录链接已生成！\n链接：{login_url}\n注意：此链接仅可使用一次，10分钟后失效")
+        
+    except Exception as e:
+        # 过滤掉HoshinoBot框架的正常结束消息
+        error_msg = str(e)
+        if "ServiceFunc of HoshinoBot finished" in error_msg:
+            # 这是框架的正常结束消息，不是真正的错误
+            return
+        else:
+            # 真正的错误才记录和返回
+            logger.error(f"生成一次性登录链接失败: {e}")
+            await botev.finish(f"操作失败: {e}")
 
 @sv.on_prefix(f"{prefix}")
 @wrap_hoshino_event
@@ -961,3 +1049,5 @@ async def set_my_party(botev: BotEvent):
 # @register_tool("获取导入", "get_library_import_data")
 # async def get_library_import(botev: BotEvent):
     # return {}
+
+# @sv.scheduled_job('date', run_date=datetime.datetime.now())

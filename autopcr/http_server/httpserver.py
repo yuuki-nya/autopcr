@@ -524,9 +524,9 @@ data: {ret}\n\n'''
                 from ...server import is_valid_qq
                 try:
                     if not await is_valid_qq(qq):
-                        return "无效的QQ。请在群内发送【#重置登录密码】来注册账号", 400
+                        return "无效的QQ。请在群内发送【#自动清日常登录】来注册账号", 400
                 except Exception as e:
-                    return f"QQ号校验失败。请在群内发送【#重置登录密码】来注册账号", 400
+                    return f"QQ号校验失败。请在群内发送【#自动清日常登录】来注册账号", 400
             usermgr.create(str(qq), str(password))
             login_user(AuthUser(qq))
             return "欢迎回来，" + qq, 200
@@ -538,6 +538,56 @@ data: {ret}\n\n'''
         async def logout(accountmgr: AccountManager):
             logout_user()
             return "再见, " + accountmgr.qid, 200
+
+        @self.web.route('/onetime-login', methods = ['GET'])
+        @rate_limit(5, timedelta(minutes=1))
+        async def onetime_login():
+            """一次性登录端点"""
+            import time
+            
+            # 获取登录码参数
+            code = request.args.get('code')
+            if not code:
+                return "缺少登录码参数", 400
+            
+            # 从server实例中获取登录码信息
+            # 需要导入server实例来访问onetime_codes
+            try:
+                from ...server import server
+                
+                # 检查登录码是否存在
+                if not hasattr(server, 'onetime_codes') or code not in server.onetime_codes:
+                    return "无效的登录码", 400
+                
+                code_info = server.onetime_codes[code]
+                
+                # 检查登录码是否已过期
+                if time.time() > code_info['expires']:
+                    # 清理过期登录码
+                    del server.onetime_codes[code]
+                    return "登录码已过期", 400
+                
+                # 检查登录码是否已使用
+                if code_info['used']:
+                    return "登录码已使用", 400
+                
+                # 标记登录码为已使用
+                code_info['used'] = True
+                
+                # 获取QQ号并登录用户
+                qq = code_info['qq']
+                login_user(AuthUser(qq))
+                
+                # 清理已使用的登录码
+                del server.onetime_codes[code]
+                
+                # 重定向到主页
+                from quart import redirect
+                return redirect('account')
+                
+            except Exception as e:
+                logger.error(f"一次性登录失败: {e}")
+                return "登录失败", 500
 
         # frontend
         @self.web.route("/", defaults={"path": ""})
