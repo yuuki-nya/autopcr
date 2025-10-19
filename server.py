@@ -21,6 +21,7 @@ from quart_auth import QuartAuth
 from quart_rate_limiter import RateLimiter
 from quart_compress import Compress
 import secrets
+import random  # 添加random模块导入
 from .autopcr.util.pcr_data import get_id_from_name
 import traceback
 from .autopcr.util.logger import instance as logger
@@ -40,6 +41,7 @@ prefix = '#'
 
 sv_help = f"""
 - {prefix}配置日常 一切的开始
+- {prefix}重置登录密码 重置登录密码，也可以用来注册
 - {prefix}清日常 [昵称] 无昵称则默认账号
 - {prefix}清日常所有 清该qq号下所有号的日常
 指令格式： 命令 昵称 参数，下述省略昵称，<>表示必填，[]表示可选，|表示分割
@@ -246,7 +248,7 @@ def wrap_accountmgr(func):
             await botev.finish("只有管理员可以操作他人账号")
 
         if target_qq not in usermgr.qids():
-            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}配置日常】进行配置\n旧版清日常目前保留，使用【清日常】")
+            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}重置登录密码】进行配置\n旧版清日常目前保留，使用【清日常】")
 
         async with usermgr.load(target_qq, readonly=True) as accmgr:
             await func(botev = botev, accmgr = accmgr, *args, **kwargs)
@@ -589,6 +591,44 @@ async def cron_statistic(botev: BotEvent):
 @wrap_hoshino_event
 async def config_clear_daily(botev: BotEvent):
     await botev.finish(address + "login")
+
+@sv.on_fullmatch(f"{prefix}重置登录密码")
+@wrap_hoshino_event
+async def reset_login_password(botev: BotEvent):
+    """重置登录密码指令处理函数"""
+    # 检查qq_mod是否为True
+    if not server.qq_mod:
+        await botev.finish("此功能需要启用QQ模式")
+        return
+    
+    # 获取用户QQ号
+    qq = str(botev.user_id)
+    
+    # 生成8位随机密码
+    password = ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', k=8))
+    
+    try:
+        # 检查用户是否已存在
+        if qq in usermgr.qids():
+            # 用户已存在，重置密码
+            async with usermgr.load(qq) as mgr:
+                mgr.set_password(password)
+                mgr.save_secret()
+            await botev.finish(f"密码重置成功！\n新密码：{password}\n请尽快登录网页端修改密码\n地址：{address}login")
+        else:
+            # 用户不存在，创建新用户
+            usermgr.create(qq, password)
+            await botev.finish(f"注册成功！\n您的QQ号：{qq}\n登录密码：{password}\n请尽快登录网页端修改密码\n地址：{address}login")
+    except Exception as e:
+        # 过滤掉HoshinoBot框架的正常结束消息
+        error_msg = str(e)
+        if "ServiceFunc of HoshinoBot finished" in error_msg:
+            # 这是框架的正常结束消息，不是真正的错误
+            return
+        else:
+            # 真正的错误才记录和返回
+            logger.error(f"重置密码失败: {e}")
+            await botev.finish(f"操作失败：{str(e)}")
 
 @sv.on_prefix(f"{prefix}")
 @wrap_hoshino_event

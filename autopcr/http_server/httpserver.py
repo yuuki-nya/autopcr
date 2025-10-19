@@ -522,8 +522,11 @@ data: {ret}\n\n'''
                 return "请输入QQ和密码", 400
             if self.qq_mod:
                 from ...server import is_valid_qq
-                if not await is_valid_qq(qq):
-                    return "无效的QQ", 400
+                try:
+                    if not await is_valid_qq(qq):
+                        return "无效的QQ。请在群内发送【#重置登录密码】来注册账号", 400
+                except Exception as e:
+                    return f"QQ号校验失败。请在群内发送【#重置登录密码】来注册账号", 400
             usermgr.create(str(qq), str(password))
             login_user(AuthUser(qq))
             return "欢迎回来，" + qq, 200
