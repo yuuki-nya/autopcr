@@ -249,7 +249,7 @@ def wrap_accountmgr(func):
             await botev.finish("只有管理员可以操作他人账号")
 
         if target_qq not in usermgr.qids():
-            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}自动清日常登录】进行配置\n旧版清日常目前保留，使用【清日常】")
+            await botev.finish(f"未找到{target_qq}的账号，请发送【{prefix}自动清日常登录】进行配置\n全部命令请发送【帮助自动清日常】")
 
         async with usermgr.load(target_qq, readonly=True) as accmgr:
             await func(botev = botev, accmgr = accmgr, *args, **kwargs)
@@ -278,7 +278,7 @@ def wrap_account(func):
             if alias:
                 await botev.finish(f"未找到昵称为【{alias}】的账号")
             else:
-                await botev.finish(f"存在多账号且未找到默认账号，请指定昵称")
+                await botev.finish(f"存在多账号且未找到默认账号，请指定昵称\n或者使用【{prefix}清日常所有】")
 
         async with accmgr.load(alias) as acc:
             await func(botev = botev, acc = acc, *args, **kwargs)
@@ -625,7 +625,8 @@ async def reset_login_password(botev: BotEvent):
                     mgr.secret.admin = True
                 
                 mgr.save_secret()
-            await botev.finish(f"密码重置成功！\n新密码：{password}\n请尽快登录网页端修改密码\n地址：{address}login")
+            await botev.send(f"密码重置成功！\n新密码：{password}\n请尽快登录网页端修改密码\n网页请长按复制到浏览器打开")
+            await botev.finish(f"{address}login")
         else:
             # 用户不存在，创建新用户
             from .autopcr.constants import SUPERUSER
@@ -640,7 +641,8 @@ async def reset_login_password(botev: BotEvent):
                     user_mgr.secret.admin = True
                     user_mgr.save_secret()
             
-            await botev.finish(f"注册成功！\n您的QQ号：{qq}\n登录密码：{password}\n请尽快登录网页端修改密码\n地址：{address}login")
+            await botev.send(f"注册成功！\n您的QQ号：{qq}\n登录密码：{password}\n请尽快登录网页端修改密码\n网页请长按复制到浏览器打开")
+            await botev.finish(f"{address}login")
     except Exception as e:
         # 过滤掉HoshinoBot框架的正常结束消息
         error_msg = str(e)
@@ -653,7 +655,7 @@ async def reset_login_password(botev: BotEvent):
             await botev.finish(f"操作失败: {e}")
             await botev.finish(f"操作失败：{str(e)}")
 
-@sv.on_fullmatch(f"{prefix}自动清日常登录")
+@sv.on_fullmatch((f"{prefix}自动清日常登录",f"{prefix}清日常登录"))
 @wrap_hoshino_event
 async def auto_daily_login(botev: BotEvent):
     """生成一次性登录链接指令处理函数"""
@@ -698,14 +700,15 @@ async def auto_daily_login(botev: BotEvent):
         # 存储登录码，包含QQ号和过期时间（10分钟后过期）
         server.onetime_codes[login_code] = {
             'qq': qq,
-            'expires': time.time() + 600,  # 10分钟后过期
+            'expires': time.time() + 300,  # 5分钟后过期
             'used': False
         }
         
         # 生成一次性登录链接
         login_url = f"{address}onetime-login?code={login_code}"
         
-        await botev.finish(f"一次性登录链接已生成！\n链接：{login_url}\n注意：此链接仅可使用一次，10分钟后失效")
+        await botev.send(f"一次性登录链接已生成！清长按复制到浏览器打开")
+        await botev.finish(login_url)
         
     except Exception as e:
         # 过滤掉HoshinoBot框架的正常结束消息
