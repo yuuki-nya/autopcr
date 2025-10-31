@@ -14,7 +14,7 @@ import asyncio, datetime
 import nonebot
 from nonebot import on_startup
 import hoshino
-from hoshino import HoshinoBot, Service, priv
+from hoshino import HoshinoBot, Service, priv, get_self_ids
 from hoshino.util import escape
 from hoshino.typing import CQEvent
 from quart_auth import QuartAuth
@@ -195,22 +195,40 @@ async def check_validate(botev: BotEvent, qq: str, cnt: int = 1):
             await asyncio.sleep(1)
 
 async def is_valid_qq(qq: str):
+    """验证QQ号是否有权限使用服务
+    
+    Args:
+        qq: QQ号字符串，如果以'g'开头则表示群组ID
+        
+    Returns:
+        bool: 是否有权限使用服务
+    """
     qq = str(qq)
-    groups = (await sv.get_enable_groups()).keys()
+    # 获取启用服务的群组，返回格式: { group_id: [self_id1, self_id2] }
+    enable_groups = await sv.get_enable_groups()
     bot = nonebot.get_bot()
+    
     if qq.startswith("g"):
+        # 群组验证：检查群是否启用了服务
         gid = qq.lstrip('g')
-        return gid.isdigit() and int(gid) in groups
+        return gid.isdigit() and int(gid) in enable_groups.keys()
     else:
-        for group in groups:
-            try:
-                async for member in await bot.get_group_member_list(group_id=group):
-                    if qq == str(member['user_id']):
-                        return True
-            except:
-                for member in await bot.get_group_member_list(group_id=group):
-                    if qq == str(member['user_id']):
-                        return True
+        # 用户验证：检查用户是否在启用服务的群中
+        for group_id, self_ids in enable_groups.items():
+            # 对于每个启用服务的群，尝试使用该群对应的bot实例获取成员列表
+            for self_id in self_ids:
+                try:
+                    # 使用指定的bot实例获取群成员列表
+                    members = await bot.get_group_member_list(group_id=group_id, self_id=self_id)
+                    # 检查用户是否在群成员中
+                    for member in members:
+                        if qq == str(member['user_id']):
+                            return True
+                    # 如果成功获取到成员列表，就不需要尝试其他bot实例了
+                    break
+                except Exception as e:
+                    # 如果当前bot实例无法获取群成员列表，尝试下一个bot实例
+                    continue
         return False
 
 def check_final_args_be_empty(func):
@@ -317,7 +335,8 @@ def wrap_tool(func):
                     del msg[0]
                 break
         else:
-            await botev.finish(f"未找到工具【{tool}】")
+            return
+            # await botev.finish(f"未找到工具【{tool}】")
 
         tool = tool_info[tool]
 
@@ -663,6 +682,11 @@ async def auto_daily_login(botev: BotEvent):
     if not server.qq_mod:
         await botev.finish("此功能需要启用QQ模式")
         return
+
+    # 暂时关闭
+    await botev.send(f"请前往网页端注册或登录。如果遗忘密码，输入{prefix}重置登录密码")
+    await botev.finish(f"{address}login")
+    return
     
     # 获取用户QQ号
     qq = str(botev.user_id)

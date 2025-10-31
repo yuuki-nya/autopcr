@@ -524,9 +524,9 @@ data: {ret}\n\n'''
                 from ...server import is_valid_qq
                 try:
                     if not await is_valid_qq(qq):
-                        return "无效的QQ。请在群内发送【#自动清日常登录】来注册账号", 400
+                        return "无效的QQ。请在群内发送【#重置登录密码】来注册账号", 400
                 except Exception as e:
-                    return f"QQ号校验失败。请在群内发送【#自动清日常登录】来注册账号", 400
+                    return f"QQ号校验失败。请在群内发送【#重置登录密码】来注册账号", 400
             usermgr.create(str(qq), str(password))
             login_user(AuthUser(qq))
             return "欢迎回来，" + qq, 200
