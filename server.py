@@ -14,7 +14,7 @@ import asyncio, datetime
 import nonebot
 from nonebot import on_startup
 import hoshino
-from hoshino import HoshinoBot, Service, priv, get_self_ids
+from hoshino import HoshinoBot, Service, priv
 from hoshino.util import escape
 from hoshino.typing import CQEvent
 from quart_auth import QuartAuth
