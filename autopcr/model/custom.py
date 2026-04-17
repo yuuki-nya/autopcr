@@ -33,7 +33,7 @@ class UnitAttribute:
     accuracy: Decimal = Decimal(0)
 
     index2ch = {
-        eParamType.HP: "HP",
+        eParamType.HP: "血量",
         eParamType.ATK: "物攻",
         eParamType.MAGIC_ATK: "魔攻",
         eParamType.DEF: "物防",
@@ -282,3 +282,9 @@ class eDifficulty(IntEnum):
     VERY_HARD = 3
     EXTREME = 4
 
+class EffectiveUnitData(BaseModel):
+    unit_id: int = 0
+    unit_lv: int = 0
+    rank: int = 0
+    equip_num: int = 0
+    equip_enhance_num: int = 0

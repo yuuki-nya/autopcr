@@ -1,6 +1,6 @@
 from ...util.linq import flow
 from ...util.ilp_solver import ex_equip_power_max_cost_flow
-from ...model.common import ExtraEquipChangeSlot, ExtraEquipChangeUnit, InventoryInfoPost, AlcesData
+from ...model.common import ExtraEquipChangeSlot, ExtraEquipChangeUnit, InventoryInfoPost, AlcesData, ExtraEquipSubStatus
 from ..modulebase import *
 from ..config import *
 from ...core.pcrclient import pcrclient
@@ -12,21 +12,21 @@ from collections import Counter
 
 @name('彩装究极炼成')
 @default(True)
-@inttype('ex_equip_rainbow_enhance_pt_hold', '保留pt数(w)', 1, list(range(0, 1001)))
+@inttype('ex_equip_rainbow_enhance_pt_hold', '保留pt数(w)', 10, list(range(0, 1001)))
 @ExEquipSubStatusRankConfig('ex_equip_rainbow_enhance_rank', '属性优先级')
-@inttype('ex_equip_rainbow_enhance_no_max_num', '非满属性', 1, [0, 1, 2, 3, 4])
+@inttype('ex_equip_rainbow_enhance_no_max_num', '非满属性个数', 1, [0, 1, 2, 3, 4])
 @ExEquipSubStatusConfig('ex_equip_rainbow_enchance_sub_status_4', '炼成属性4')
 @ExEquipSubStatusConfig('ex_equip_rainbow_enchance_sub_status_3', '炼成属性3')
 @ExEquipSubStatusConfig('ex_equip_rainbow_enchance_sub_status_2', '炼成属性2')
 @ExEquipSubStatusConfig('ex_equip_rainbow_enchance_sub_status_1', '炼成属性1')
-@booltype('ex_equip_rainbow_enchance_view', '看状态', True)
 @texttype('ex_equip_rainbow_enchance_id', '彩装id', 0)
-@description('看状态指获取彩装id和炼成属性.非满属性指属性值不必最大,以便手动用光球强化.属性优先级指目标属性值一样时,比较其他属性决定保留或放弃,优先级是按顺序从高到低,目标属性的优先级最高,不受属性优先级影响.满强目标属性会自动锁住.')
+@singlechoice('ex_equip_rainbow_enchance_action', '做什么', '看属性', ['看属性', '炼成', '看概率'])
+@description('看属性指获取彩装id和炼成属性,炼成则进行究极炼成,看概率指根据炼成记录统计各属性概率,非满属性指属性值不必最大,以便手动用光球强化.属性优先级指目标属性值一样时,比较其他属性决定保留或放弃,优先级是按顺序从高到低,目标属性的优先级最高,不受属性优先级影响.满强目标属性会自动锁住.')
 class ex_equip_rainbow_enchance(Module):
 
     async def do_task(self, client: pcrclient):
-        ex_equip_rainbow_enchance_view = self.get_config('ex_equip_rainbow_enchance_view')
-        if ex_equip_rainbow_enchance_view:
+        ex_equip_rainbow_enchance_action = self.get_config('ex_equip_rainbow_enchance_action')
+        if ex_equip_rainbow_enchance_action == '看属性':
             msg = flow(client.data.ex_equips.values()) \
                 .where(lambda ex: db.get_ex_equip_rarity(ex.ex_equipment_id) == 5) \
                 .select(lambda ex: f"{ex.serial_id}: {db.get_ex_equip_name(ex.ex_equipment_id)} "
@@ -37,7 +37,26 @@ class ex_equip_rainbow_enchance(Module):
                 raise SkipError("无彩装")
             msg = '\n'.join(msg)
             self._log(f"{cnt}件彩装:\n{msg}")
-        else:
+        elif ex_equip_rainbow_enchance_action == '看概率':
+            for equip, data in self.iter_cache():
+                total = sum(data.values())
+                if total == 0:
+                    continue
+                equip = int(equip)
+                self._log(f"{db.get_ex_equip_name(equip)}({total}次词条刷新)")
+                info = flow(data.items()) \
+                    .where(lambda kv: kv[0] != 'total') \
+                    .select(lambda kv: (list(map(int, kv[0].split('-'))), kv[1])) \
+                    .group_by(lambda kv: kv[0][0]) \
+                    .to_dict(lambda g: g.key, lambda g: g.to_list())
+                for status in sorted(info):
+                    status_info = info[status]
+                    status_info.sort(key=lambda x: x[0][1])
+                    msg = '/'.join([f"{db.get_ex_equip_sub_status_str(equip, [ExtraEquipSubStatus(status=k, step=s)])}: {v/total * 100:.2f}%" for (k, s), v in status_info])
+                    self._log(f"  {msg}")
+                self._log("")
+
+        elif ex_equip_rainbow_enchance_action == '炼成':
             serial_id = self.get_config('ex_equip_rainbow_enchance_id')
             if not serial_id.isdigit():
                 raise AbortError("彩装id非法")
@@ -57,19 +76,11 @@ class ex_equip_rainbow_enchance(Module):
             if invalid_status:
                 raise AbortError(f"炼成属性包含该装备不支持的属性: {', '.join(UnitAttribute.index2ch[eParamType(s)] for s in invalid_status)}")
 
-            top = await client.alces_top()
-            if top.pending_alces_data:
-                if top.pending_alces_data.serial_id != serial_id:
-                    raise AbortError(f"{top.pending_alces_data.serial_id}炼成属性待决定,请先自行决定")
-                await self.decide_alces(client, top.pending_alces_data, target_sub_status)
-
-            no_max_num = self.get_config('ex_equip_rainbow_enhance_no_max_num')
-            target_cnt = sum(target_sub_status.values())
-
-            consume_cnt = Counter()
-            alces_exec_cnt = 0
-            last_lock_cnt = 0
-            stop = False
+            self.cache_info = self.find_cache(str(client.data.ex_equips[serial_id].ex_equipment_id))
+            if not self.cache_info:
+                self.cache_info = Counter()
+            else:
+                self.cache_info = Counter(self.cache_info)
 
             base = 1
             self.weight = Counter()
@@ -83,6 +94,23 @@ class ex_equip_rainbow_enchance(Module):
 
             # self._log(f"各属性加权值: " + ', '.join(f"{UnitAttribute.index2ch[eParamType(k)]}: {v}" for k, v in self.weight.items()))
 
+            top = await client.alces_top()
+            if top.pending_alces_data:
+                if top.pending_alces_data.serial_id != serial_id:
+                    raise AbortError(f"{top.pending_alces_data.serial_id}炼成属性待决定,请先自行决定")
+                await self.decide_alces(client, top.pending_alces_data, target_sub_status)
+
+            no_max_num = self.get_config('ex_equip_rainbow_enhance_no_max_num')
+            target_cnt = sum(target_sub_status.values())
+
+            if no_max_num > target_cnt:
+                raise AbortError(f"非满属性个数{no_max_num}不能大于非任意的目标属性个数{target_cnt}")
+
+            consume_cnt = Counter()
+            alces_exec_cnt = 0
+            last_lock_cnt = 0
+            stop = False
+
             self._log(f"当前彩装属性 " +
                       f"{serial_id}: {db.get_ex_equip_name(client.data.ex_equips[serial_id].ex_equipment_id)} "
                       f"{db.get_ex_equip_sub_status_str(client.data.ex_equips[serial_id].ex_equipment_id, client.data.ex_equips[serial_id].sub_status or [])}")
@@ -91,7 +119,7 @@ class ex_equip_rainbow_enchance(Module):
                 
             while not stop:
                 achived_max_cnt, achived_cnt = await self.get_achived_sub_status_cnt(client, serial_id, target_sub_status)
-                if achived_max_cnt == target_cnt - no_max_num and achived_cnt == target_cnt:
+                if achived_max_cnt >= target_cnt - no_max_num and achived_cnt >= target_cnt:
                     self._log("彩装炼成属性已达成目标")
                     break
 
@@ -130,9 +158,12 @@ class ex_equip_rainbow_enchance(Module):
                 self._log(f"共进行了{alces_exec_cnt}次究极炼成，消耗了：")
                 for consume in consume_cnt:
                     self._log(f"  {db.get_inventory_name_san(consume)} x {consume_cnt[consume]}")
+            self.save_cache(str(client.data.ex_equips[serial_id].ex_equipment_id), self.cache_info)
             self._log(f"最终彩装属性 " +
                       f"{serial_id}: {db.get_ex_equip_name(client.data.ex_equips[serial_id].ex_equipment_id)} "
                       f"{db.get_ex_equip_sub_status_str(client.data.ex_equips[serial_id].ex_equipment_id, client.data.ex_equips[serial_id].sub_status or [])}")
+        else:
+            raise AbortError(f"未知操作{ex_equip_rainbow_enchance_action}")
     
     async def do_lock(self, client: pcrclient, serial_id: int, target_sub_status: Counter):
         current_max_sub_status = Counter()
@@ -149,12 +180,13 @@ class ex_equip_rainbow_enchance(Module):
 
     async def decide_alces(self, client: pcrclient, alces_data: AlcesData, target_sub_status: Counter):
         accept = False
-        target_key = target_sub_status.keys()
         current_max_sub_status = Counter()
+
         for status in alces_data.sub_status:
             if status.is_lock:
                 current_max_sub_status[status.status] += 1
                 continue
+            self.cache_info[f"{status.status}-{status.step}"] += 1
             if current_max_sub_status[status.status] < target_sub_status[status.status] and status.step == 5:
                 current_max_sub_status[status.status] += 1
                 accept = True
@@ -400,7 +432,7 @@ class ex_equip_power_maximun(Module):
             unit_node = f"u{unit_id}"
             edges.append((st, unit_node, 3, 0))
 
-            unit_attr = db.calc_unit_attribute(client.data.unit[unit_id], read_story, client.data.ex_equips)
+            unit_attr = db.calc_unit_attribute(client.data.unit[unit_id], read_story, client.data.ex_equips, exclude_ex_equip = True)
 
             slot_data = db.unit_ex_equipment_slot[unit_id]
             for slot_id, ex_category in enumerate([slot_data.slot_category_1, slot_data.slot_category_2, slot_data.slot_category_3], start=1):
