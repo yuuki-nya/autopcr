@@ -79,6 +79,7 @@ daily_modules = ModuleList(
         present_receive,
         talent_sweep2,
         smart_very_hard_sweep,
+        xinsui9_sweep,
         xinsui8_sweep,
         xinsui7_sweep,
         xinsui6_sweep,
@@ -96,6 +97,8 @@ daily_modules = ModuleList(
         mirai_very_hard_sweep,
         smart_hard_sweep,
         smart_shiori_sweep,
+        mirai_sp1_h_sweep,
+        mirai_sp1_shiori_sweep,
         last_normal_quest_sweep,
         lazy_normal_sweep,
 
